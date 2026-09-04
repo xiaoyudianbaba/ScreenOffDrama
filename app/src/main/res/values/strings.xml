@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">息屏听剧</string>
+    <string name="notification_channel_name">息屏听剧服务</string>
+    <string name="notification_text">息屏听剧运行中</string>
+    <string name="action_stop">停止服务</string>
+    <string name="ball_desc">息屏听剧悬浮球</string>
+    <string name="btn_overlay_default">悬浮窗权限</string>
+    <string name="btn_battery_default">电池优化</string>
+    <string name="btn_notification_default">通知权限</string>
+    <string name="btn_service_start">启动服务</string>
+    <string name="btn_service_stop">停止服务</string>
+    <string name="tip_usage">使用方法：
+1. 打开 YouTube 或哔哩哔哩播放视频
+2. 点击悬浮球，屏幕全黑、声音继续
+3. 按电源键退出息屏，回到视频画面
+
+支持的应用：YouTube、哔哩哔哩（第一阶段固定白名单）。
+
+广告跳过：
+1. 在下方开启“YouTube 广告自动跳过”
+2. 按提示开启无障碍服务（安卓 13+ 首次需先在系统设置允许受限设置）
+3. 播放 YouTube 时自动跳过可跳过广告，息屏听剧时同样生效，连续广告自动逐段跳过。</string>
+
+    <!-- ===== 广告自动跳过（第二阶段） ===== -->
+    <string name="ad_skip_section_title">YouTube 广告自动跳过</string>
+    <string name="ad_skip_label">自动跳过 YouTube 可跳过广告</string>
+    <string name="ad_skip_summary">息屏听剧时同样生效，支持连续广告</string>
+    <string name="ad_skip_service_label">息屏听剧广告跳过</string>
+    <string name="accessibility_service_description">用于检测并自动点击 YouTube 视频中出现的“跳过广告”按钮，实现全程无需干预地跳过广告，连续广告也会逐段自动跳过。所有检测均在本地完成，不读取、不存储、不传输任何个人数据。</string>
+    <string name="ad_skip_status_on">无障碍服务：已开启，正在监听 YouTube</string>
+    <string name="ad_skip_status_off">无障碍服务：未开启，广告跳过不会生效</string>
+    <string name="ad_skip_switch_off">广告跳过开关：已关闭（服务仍保持，不监听）</string>
+    <string name="ad_skip_restricted_hint">开启方法：设置 → 应用 → 息屏听剧 → 右上角“⋮”菜单 → 允许受限设置，再回到设置 → 无障碍 → 已下载的应用 → 息屏听剧，打开开关。若安装时出现“此应用可能有风险”提示，属无障碍类应用的通用提示，选择“仍要安装”即可。</string>
+    <string name="btn_ad_skip_settings">去开启无障碍服务</string>
+    <string name="btn_ad_skip_settings_done">无障碍服务已开启</string>
+    
+    <!-- ===== 管理页（息屏模式下） ===== -->
+    <string name="btn_pause">暂停</string>
+    <string name="btn_play">播放</string>
+    <string name="btn_exit_screen_off">退出息屏</string>
+    <string name="control_panel_hint">从屏幕顶部往下滑可呼出此管理页</string>
+</resources>
