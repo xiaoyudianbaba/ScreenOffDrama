@@ -17,17 +17,14 @@ import androidx.core.app.ServiceCompat
 import com.screenoffdrama.MainActivity
 import com.screenoffdrama.R
 import com.screenoffdrama.overlay.BlackOverlayManager
-import com.screenoffdrama.overlay.ControlPanelManager
-import com.screenoffdrama.overlay.FloatingBallManager
 
 /**
  * 息屏听剧前台服务
  *
- * - 类型声明为 mediaPlayback（媒体播放），Android 14+ 需同时声明
- *   FOREGROUND_SERVICE_MEDIA_PLAYBACK 权限，并在 startForeground 传入类型
- * - 维护悬浮球 + 全屏黑屏覆盖层，互不抢焦点，保证底层视频不暂停
- * - 监听 ACTION_SCREEN_OFF：处于“息屏模式”时按电源键 → 退出息屏
- * - START_STICKY + 忽略电池优化，尽量不被系统杀掉
+ * - 启动后立即显示全屏黑屏覆盖层（息屏模式）
+ * - 点击覆盖层右上角 X 按钮退出息屏模式
+ * - 按电源键熄屏也会退出息屏模式
+ * - 通知栏提供"停止服务"操作
  */
 class ScreenOffService : Service() {
 
@@ -41,17 +38,12 @@ class ScreenOffService : Service() {
             private set
     }
 
-    private var ballManager: FloatingBallManager? = null
     private var blackOverlay: BlackOverlayManager? = null
-    private var controlPanelManager: ControlPanelManager? = null
-
-    /** 是否处于“息屏听剧”状态（黑屏覆盖层显示中） */
     private var screenOffMode = false
 
     private val screenOffReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == Intent.ACTION_SCREEN_OFF) {
-                // 息屏模式下按电源键 → 退出息屏（移除黑窗、恢复悬浮球）
                 exitScreenOffMode()
             }
         }
@@ -63,10 +55,8 @@ class ScreenOffService : Service() {
         createNotificationChannel()
         startAsForeground()
         registerScreenOffReceiver()
-
-        blackOverlay = BlackOverlayManager(this)
-        ballManager = FloatingBallManager(this) { enterScreenOffMode() }
-        ballManager?.show()
+        // 启动后立即进入息屏模式
+        enterScreenOffMode()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -74,27 +64,22 @@ class ScreenOffService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        // 被系统重建（START_STICKY）时确保仍以前台服务身份运行
         if (!isRunning) {
             isRunning = true
             startAsForeground()
+        }
+        // 如果不在息屏模式，重新进入
+        if (!screenOffMode) {
+            enterScreenOffMode()
         }
         return START_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    override fun onTaskRemoved(rootIntent: Intent?) {
-        // 从最近任务划掉本应用时保持服务（前台服务不受影响）
-    }
-
     override fun onDestroy() {
         super.onDestroy()
-        ballManager?.hide()
-        blackOverlay?.remove()
-        blackOverlay = null
-        controlPanelManager?.hide()
-        controlPanelManager = null
+        exitScreenOffMode()
         runCatching { unregisterReceiver(screenOffReceiver) }
         isRunning = false
     }
@@ -111,7 +96,6 @@ class ScreenOffService : Service() {
     }
 
     private fun startAsForeground() {
-        // minSdk 31 >= API 29，直接带媒体播放类型启动前台服务
         ServiceCompat.startForeground(
             this,
             NOTIFICATION_ID,
@@ -157,30 +141,19 @@ class ScreenOffService : Service() {
 
     // ---------- 息屏状态切换 ----------
 
-    /** 进入息屏听剧：隐藏悬浮球，显示全屏黑窗（不抢焦点，底层视频继续播放） */
     private fun enterScreenOffMode() {
         if (screenOffMode) return
         screenOffMode = true
-        ballManager?.hide()
-        
-        // 创建黑色覆盖层，点击右上角退出按钮时退出息屏模式
         blackOverlay = BlackOverlayManager(this) {
             exitScreenOffMode()
         }
         blackOverlay?.show()
     }
 
-    /** 退出息屏听剧：移除黑窗，恢复悬浮球 */
     fun exitScreenOffMode() {
         if (!screenOffMode) return
         screenOffMode = false
-        
-        // 释放管理页
-        controlPanelManager?.hide()
-        controlPanelManager = null
-        
         blackOverlay?.remove()
         blackOverlay = null
-        ballManager?.show()
     }
 }

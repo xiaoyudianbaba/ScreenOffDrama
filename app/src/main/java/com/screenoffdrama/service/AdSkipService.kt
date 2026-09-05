@@ -12,12 +12,13 @@ import android.view.accessibility.AccessibilityNodeInfo
  * YouTube 广告自动跳过（无障碍服务）
  *
  * - 与 ScreenOffService 相互独立、并行运行，由系统绑定，不受后台启动限制影响
- * - 监听 YouTube 窗口状态/内容变化，自动检测“跳过广告”按钮并模拟点击
+ * - 监听 YouTube 窗口状态/内容变化，自动检测"跳过广告"按钮并模拟点击
  * - 连续广告天然支持：第一段被跳过 → YouTube 刷新界面加载第二段 → 触发新事件 → 再次检测点击
  * - 多策略检测：
- *   L1 文本匹配（“跳过广告 / 跳过 / Skip Ad / Skip”）——标准 UI 广告，最快
+ *   L1 文本匹配（"跳过广告 / 跳过 / Skip Ad / Skip"）——标准 UI 广告，最快
  *   L2 资源ID匹配（skip_ad_button / ytv_skip_ad 等）——最稳定，适配各版本
  *   L3 父节点遍历——按钮本身不可点击时，向上找可点击祖先再点击
+ *   L4 赞助商广告关闭——检测"赞助商广告"并点击关闭按钮
  * - 防重复：点击后置 isSkipping 标记，1 秒后重置，避免同一广告被反复点击导致循环
  *
  * 说明：所有检测均在本地完成，不读取、不存储、不传输任何用户数据。
@@ -44,6 +45,9 @@ class AdSkipService : AccessibilityService() {
             "ytv_skip_ad",
             "skip_ad"
         )
+
+        /** L4 赞助商广告相关文本 */
+        private val SPONSORED_AD_TEXTS = listOf("赞助商广告", "Sponsored", "sponsored")
 
         /** 主界面是否已开启广告跳过（供 MainActivity 状态显示复用） */
         fun isUserEnabled(context: Context): Boolean {
@@ -91,21 +95,31 @@ class AdSkipService : AccessibilityService() {
 
     /**
      * 在窗口节点树中查找"跳过广告"节点并点击。
-     * 查找优先级：L2 资源ID → L1 文本；点击处理：L3 向上找可点击祖先。
+     * 查找优先级：L2 资源ID → L1 文本 → L4 赞助商广告；点击处理：L3 向上找可点击祖先。
      * @return 是否成功找到并点击了跳过按钮
      */
     private fun tryClickSkip(root: AccessibilityNodeInfo): Boolean {
-        val target = findSkipNode(root) ?: return false
+        // L1/L2/L3: 尝试点击标准跳过按钮
+        val skipNode = findSkipNode(root)
+        if (skipNode != null) {
+            val clickable = findClickableSelfOrAncestor(skipNode) ?: return false
+            if (!clickable.isEnabled) return false
 
-        // L3：按钮本身不可点击时，向上遍历父节点找可点击的祖先
-        val clickable = findClickableSelfOrAncestor(target) ?: return false
-        // 倒计时中按钮未启用（如 "Skip Ad 5"），本次不点，等下一个事件再试
-        if (!clickable.isEnabled) return false
-
-        if (clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-            markSkipping()
-            return true
+            if (clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                markSkipping()
+                return true
+            }
         }
+
+        // L4: 尝试关闭赞助商广告
+        val sponsorAdNode = findSponsoredAdCloseButton(root)
+        if (sponsorAdNode != null) {
+            if (sponsorAdNode.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                markSkipping()
+                return true
+            }
+        }
+
         return false
     }
 
@@ -140,11 +154,65 @@ class AdSkipService : AccessibilityService() {
         return null
     }
 
-    /** 精确命中关键词，或命中带倒计时的按钮文案（如 “Skip Ad 5”“跳过广告”） */
+    /**
+     * L4: 直接在节点树中搜索关闭按钮（content-desc="关闭" / "Close" / "关闭广告" 等）
+     * 不需要先找广告文字，直接找关闭按钮即可
+     */
+    private fun findSponsoredAdCloseButton(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        var visited = 0
+
+        while (queue.isNotEmpty() && visited < MAX_SCAN_NODES) {
+            val node = queue.removeFirst()
+            visited++
+
+            val contentDesc = node.contentDescription?.toString()?.trim() ?: ""
+            val text = node.text?.toString()?.trim() ?: ""
+            
+            val isCloseButton = contentDesc in listOf("关闭", "Close", "关闭广告") ||
+                    text in listOf("×", "X", "✕", "关闭") ||
+                    node.viewIdResourceName?.contains("close", ignoreCase = true) == true ||
+                    node.viewIdResourceName?.contains("dismiss", ignoreCase = true) == true
+
+            if (isCloseButton && node.isClickable) {
+                return node
+            }
+
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { queue.add(it) }
+            }
+        }
+        return null
+    }
+
+    /** 在节点树中查找包含指定文本的节点 */
+    private fun findNodeWithText(root: AccessibilityNodeInfo, texts: List<String>): AccessibilityNodeInfo? {
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        var visited = 0
+
+        while (queue.isNotEmpty() && visited < MAX_SCAN_NODES) {
+            val node = queue.removeFirst()
+            visited++
+
+            val nodeText = node.text?.toString()?.trim() ?: ""
+            if (nodeText.isNotEmpty() && texts.any { nodeText.contains(it, ignoreCase = true) }) {
+                return node
+            }
+
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { queue.add(it) }
+            }
+        }
+        return null
+    }
+
+    /** 精确命中关键词，或命中带倒计时的按钮文案（如 "Skip Ad 5""跳过广告"） */
     private fun matchesSkipText(text: String): Boolean {
         val t = text.trim()
         if (SKIP_TEXTS.any { t.equals(it, ignoreCase = true) }) return true
-        // 倒计时文案（如 “Skip Ad 5”）也命中；避免误伤 “Skip intro / Skipping” 等
+        // 倒计时文案（如 "Skip Ad 5"）也命中；避免误伤 "Skip intro / Skipping" 等
         return t.contains("Skip Ad", ignoreCase = true) || t.contains("跳过广告")
     }
 
