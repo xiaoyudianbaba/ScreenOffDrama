@@ -102,12 +102,20 @@ class AdSkipService : AccessibilityService() {
         // L1/L2/L3: 尝试点击标准跳过按钮
         val skipNode = findSkipNode(root)
         if (skipNode != null) {
-            val clickable = findClickableSelfOrAncestor(skipNode) ?: return false
-            if (!clickable.isEnabled) return false
-
-            if (clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-                markSkipping()
-                return true
+            // 优先直接点击节点本身
+            if (skipNode.isClickable && skipNode.isEnabled) {
+                if (skipNode.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                    markSkipping()
+                    return true
+                }
+            }
+            // 仅向上找2层可点击祖先（避免找到视频播放器容器）
+            val clickable = findClickableSelfOrAncestor(skipNode, 2)
+            if (clickable != null && clickable.isEnabled) {
+                if (clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                    markSkipping()
+                    return true
+                }
             }
         }
 
@@ -238,13 +246,14 @@ class AdSkipService : AccessibilityService() {
         return t.contains("Skip Ad", ignoreCase = true) || t.contains("跳过广告")
     }
 
-    /** 向上（含自身）查找可点击节点，最多 12 层 */
+    /** 向上（含自身）查找可点击节点，限制层数防止误点视频播放器 */
     private fun findClickableSelfOrAncestor(
-        node: AccessibilityNodeInfo
+        node: AccessibilityNodeInfo,
+        maxDepth: Int = 3
     ): AccessibilityNodeInfo? {
         var current: AccessibilityNodeInfo? = node
         var depth = 0
-        while (current != null && depth < 12) {
+        while (current != null && depth < maxDepth) {
             if (current.isClickable) return current
             current = current.parent
             depth++
