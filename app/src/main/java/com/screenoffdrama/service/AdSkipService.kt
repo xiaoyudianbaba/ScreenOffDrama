@@ -155,10 +155,39 @@ class AdSkipService : AccessibilityService() {
     }
 
     /**
-     * L4: 直接在节点树中搜索关闭按钮（content-desc="关闭" / "Close" / "关闭广告" 等）
-     * 不需要先找广告文字，直接找关闭按钮即可
+     * L4: 关闭赞助商广告卡片。
+     * 只在 engagement_panel 区域内搜索 content-desc="关闭广告" 的按钮，
+     * 避免误点视频播放器区域的元素导致暂停。
      */
     private fun findSponsoredAdCloseButton(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        // 先找到 engagement_panel 容器
+        val panel = findNodeByIdSuffix(root, "engagement_panel") ?: return null
+
+        // 在面板内搜索关闭按钮
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(panel)
+        var visited = 0
+
+        while (queue.isNotEmpty() && visited < 100) {
+            val node = queue.removeFirst()
+            visited++
+
+            val contentDesc = node.contentDescription?.toString()?.trim() ?: ""
+
+            // 只匹配"关闭广告"，不匹配宽泛的"关闭"/"Close"/"X"
+            if (contentDesc == "关闭广告" && node.isClickable) {
+                return node
+            }
+
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { queue.add(it) }
+            }
+        }
+        return null
+    }
+
+    /** 按 resource-id 后缀查找节点 */
+    private fun findNodeByIdSuffix(root: AccessibilityNodeInfo, suffix: String): AccessibilityNodeInfo? {
         val queue = ArrayDeque<AccessibilityNodeInfo>()
         queue.add(root)
         var visited = 0
@@ -167,15 +196,8 @@ class AdSkipService : AccessibilityService() {
             val node = queue.removeFirst()
             visited++
 
-            val contentDesc = node.contentDescription?.toString()?.trim() ?: ""
-            val text = node.text?.toString()?.trim() ?: ""
-            
-            val isCloseButton = contentDesc in listOf("关闭", "Close", "关闭广告") ||
-                    text in listOf("×", "X", "✕", "关闭") ||
-                    node.viewIdResourceName?.contains("close", ignoreCase = true) == true ||
-                    node.viewIdResourceName?.contains("dismiss", ignoreCase = true) == true
-
-            if (isCloseButton && node.isClickable) {
+            val resId = node.viewIdResourceName ?: ""
+            if (resId.endsWith(suffix, ignoreCase = true)) {
                 return node
             }
 
