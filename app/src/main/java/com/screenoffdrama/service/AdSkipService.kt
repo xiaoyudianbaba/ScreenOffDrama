@@ -11,7 +11,11 @@ import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK
 
 /**
- * YouTube 广告自动跳过 + 播放控制（无障碍服务）
+ * YouTube 广告自动跳过 + 播放保活（无障碍服务）
+ *
+ * 优先级：广告跳过 > 播放保活
+ * 广告跳过点击后设置 isSkipping 标记，1.5 秒内不执行任何操作（包括播放保活），
+ * 避免跳过广告后的短暂暂停状态触发误恢复。
  */
 class AdSkipService : AccessibilityService() {
 
@@ -19,7 +23,7 @@ class AdSkipService : AccessibilityService() {
         private const val TAG = "AdSkipService"
         const val KEY_AD_SKIP_ENABLED = "ad_skip_enabled"
         private const val TARGET_PACKAGE = "com.google.android.youtube"
-        private const val SKIP_RESET_DELAY_MS = 1500L
+        private const val SKIP_RESET_DELAY_MS = 2000L
         private const val MAX_SCAN_NODES = 800
 
         private val SKIP_TEXTS = listOf("跳过广告", "跳过", "Skip Ad", "Skip ads", "Skip")
@@ -35,6 +39,7 @@ class AdSkipService : AccessibilityService() {
 
     private val handler = Handler(Looper.getMainLooper())
     private var isSkipping = false
+    private var lastResumeTime = 0L
 
     private val prefs: SharedPreferences by lazy {
         getSharedPreferences("settings", Context.MODE_PRIVATE)
@@ -43,23 +48,26 @@ class AdSkipService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         event ?: return
         if (!prefs.getBoolean(KEY_AD_SKIP_ENABLED, true)) return
-        if (isSkipping) return
         if (event.packageName?.toString() != TARGET_PACKAGE) return
 
         when (event.eventType) {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
-                // 尝试跳过广告
-                val root = rootInActiveWindow
-                if (root != null) {
-                    Log.d(TAG, "事件触发: type=${event.eventType}, 尝试检测跳过按钮")
-                    if (tryClickSkip(root)) return
-                }
+                // 跳过冷却期内不做任何操作
+                if (isSkipping) return
 
-                // 活动窗口没找到，尝试所有窗口（包括 PiP）
+                val root = rootInActiveWindow
+
+                // 优先级1：尝试跳过广告
+                if (root != null && tryClickSkip(root)) return
                 for (window in windows) {
                     val windowRoot = window.root ?: continue
                     if (tryClickSkip(windowRoot)) return
+                }
+
+                // 优先级2：息屏模式下检测暂停并恢复（仅在跳过冷却期后）
+                if (ScreenOffService.isRunning && !isSkipping) {
+                    checkAndResumePlayback(root)
                 }
             }
         }
@@ -67,40 +75,36 @@ class AdSkipService : AccessibilityService() {
 
     override fun onInterrupt() {}
 
-    // ---------- 广告跳过 ----------
+    // ==================== 广告跳过 ====================
 
     private fun tryClickSkip(root: AccessibilityNodeInfo): Boolean {
-        // L1/L2/L3: 标准跳过按钮
         val skipNode = findSkipNode(root)
         if (skipNode != null) {
-            Log.d(TAG, "找到跳过按钮: text='${skipNode.text}', resId='${skipNode.viewIdResourceName}', clickable=${skipNode.isClickable}")
+            Log.e(TAG, "找到跳过按钮: text='${skipNode.text}', resId='${skipNode.viewIdResourceName}'")
 
             // 优先直接点击节点本身
             if (skipNode.isClickable && skipNode.isEnabled) {
                 if (skipNode.performAction(ACTION_CLICK)) {
-                    Log.d(TAG, "直接点击跳过按钮成功")
+                    Log.e(TAG, "直接点击跳过按钮成功")
                     markSkipping()
                     return true
                 }
-                Log.w(TAG, "直接点击失败，尝试祖先节点")
             }
 
             // 向上找可点击祖先（限制3层）
             val clickable = findClickableSelfOrAncestor(skipNode, 3)
             if (clickable != null && clickable.isEnabled) {
-                Log.d(TAG, "找到可点击祖先: resId='${clickable.viewIdResourceName}', class=${clickable.className}")
                 if (clickable.performAction(ACTION_CLICK)) {
-                    Log.d(TAG, "点击祖先节点跳过成功")
+                    Log.e(TAG, "点击祖先节点跳过成功")
                     markSkipping()
                     return true
                 }
-                Log.w(TAG, "点击祖先也失败")
             }
 
-            // 最后尝试：对节点本身执行 ACTION_CLICK（即使 isClickable=false）
+            // 兜底：强制点击
             if (skipNode.isEnabled) {
                 if (skipNode.performAction(ACTION_CLICK)) {
-                    Log.d(TAG, "强制点击节点成功")
+                    Log.e(TAG, "强制点击跳过按钮成功")
                     markSkipping()
                     return true
                 }
@@ -110,9 +114,8 @@ class AdSkipService : AccessibilityService() {
         // L4: 赞助商广告关闭
         val sponsorAdNode = findSponsoredAdCloseButton(root)
         if (sponsorAdNode != null) {
-            Log.d(TAG, "找到赞助商广告关闭按钮")
             if (sponsorAdNode.performAction(ACTION_CLICK)) {
-                Log.d(TAG, "关闭赞助商广告成功")
+                Log.e(TAG, "关闭赞助商广告成功")
                 markSkipping()
                 return true
             }
@@ -130,19 +133,16 @@ class AdSkipService : AccessibilityService() {
             val node = queue.removeFirst()
             visited++
 
-            // L2: 资源ID
             val resId = node.viewIdResourceName
             if (resId != null && SKIP_RES_ID_KEYWORDS.any { resId.contains(it, ignoreCase = true) }) {
                 return node
             }
 
-            // L1: 文本
             val text = node.text?.toString()?.trim()
             if (!text.isNullOrEmpty() && matchesSkipText(text)) {
                 return node
             }
 
-            // L1b: contentDescription
             val desc = node.contentDescription?.toString()?.trim()
             if (!desc.isNullOrEmpty() && matchesSkipText(desc)) {
                 return node
@@ -172,7 +172,59 @@ class AdSkipService : AccessibilityService() {
         return null
     }
 
-    // ---------- 工具方法 ----------
+    // ==================== 播放保活 ====================
+
+    /**
+     * 检测 YouTube 是否被暂停，如果是则自动恢复播放。
+     * 通过查找播放/暂停按钮的 content-desc 判断状态：
+     * - 暂停时按钮显示"播放" / "Play"
+     * - 播放中显示"暂停" / "Pause"
+     */
+    private fun checkAndResumePlayback(root: AccessibilityNodeInfo?) {
+        if (root == null) return
+
+        // 防抖：两次恢复至少间隔 3 秒
+        val now = System.currentTimeMillis()
+        if (now - lastResumeTime < 3000) return
+
+        val playBtn = findPlayPauseButton(root) ?: return
+
+        val desc = playBtn.contentDescription?.toString() ?: ""
+        val text = playBtn.text?.toString() ?: ""
+
+        // 暂停状态：按钮提示"播放"
+        val isPaused = desc.contains("播放") || desc.contains("Play") ||
+                text.contains("播放") || text.contains("Play")
+
+        if (isPaused && playBtn.isEnabled) {
+            Log.e(TAG, "检测到 YouTube 暂停 (desc='$desc'), 自动恢复播放")
+            lastResumeTime = now
+            playBtn.performAction(ACTION_CLICK)
+        }
+    }
+
+    private fun findPlayPauseButton(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
+        var visited = 0
+
+        while (queue.isNotEmpty() && visited < MAX_SCAN_NODES) {
+            val node = queue.removeFirst()
+            visited++
+
+            val resId = node.viewIdResourceName ?: ""
+            if (resId.contains("play_pause") || resId.contains("play_button") || resId.contains("pause_button")) {
+                return node
+            }
+
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { queue.add(it) }
+            }
+        }
+        return null
+    }
+
+    // ==================== 工具方法 ====================
 
     private fun findNodeByIdSuffix(root: AccessibilityNodeInfo, suffix: String): AccessibilityNodeInfo? {
         val queue = ArrayDeque<AccessibilityNodeInfo>()

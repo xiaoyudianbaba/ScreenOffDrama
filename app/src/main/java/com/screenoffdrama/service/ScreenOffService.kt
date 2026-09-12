@@ -22,11 +22,13 @@ import com.screenoffdrama.overlay.BlackOverlayManager
 /**
  * 息屏听剧前台服务
  *
- * - 启动后立即进入息屏模式：将 YouTube 切为全屏 + 显示黑色覆盖层
- * - 黑色覆盖层遮挡屏幕，底层 YouTube 全屏播放，广告跳过按钮完整可见
- * - 无障碍服务(AdSkipService)自动检测并点击跳过按钮
+ * - 启动后立即显示全屏黑色覆盖层（息屏模式）
+ * - YouTube 在 PiP 小窗中继续播放，无障碍服务自动跳过广告
  * - 点击覆盖层右上角 X 按钮退出息屏模式
  * - 按电源键熄屏也会退出息屏模式
+ *
+ * 设计原则：不干预 YouTube 的播放状态，只用黑色覆盖层遮挡屏幕。
+ * 不发送 Intent 拉起 YouTube（会导致 YouTube 暂停），让 YouTube 自然保持在 PiP 播放。
  */
 class ScreenOffService : Service() {
 
@@ -47,6 +49,7 @@ class ScreenOffService : Service() {
     private val screenOffReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == Intent.ACTION_SCREEN_OFF) {
+                Log.d(TAG, "收到熄屏广播，退出息屏模式")
                 exitScreenOffMode()
             }
         }
@@ -142,49 +145,28 @@ class ScreenOffService : Service() {
 
     // ---------- 息屏状态切换 ----------
 
+    /**
+     * 进入息屏模式：立即显示黑色覆盖层。
+     * 不干预 YouTube 状态，让 YouTube 自然保持 PiP 播放。
+     */
     private fun enterScreenOffMode() {
         if (screenOffMode) return
         screenOffMode = true
-        Log.d(TAG, "进入息屏模式")
+        Log.e(TAG, ">>> 进入息屏模式 - 直接显示黑色覆盖层")
 
-        // 将 YouTube 切为全屏（退出 PiP），保证广告跳过按钮完整可见
-        bringYouTubeToFullScreen()
-
-        // 延迟显示黑色覆盖层，等 YouTube 全屏切换完成
-        handler.postDelayed({
-            blackOverlay = BlackOverlayManager(this) {
-                exitScreenOffMode()
-            }
-            blackOverlay?.show()
-            Log.d(TAG, "黑色覆盖层已显示")
-        }, 500)
+        // 立即显示黑色覆盖层，不延迟，不发送 Intent 拉起 YouTube
+        blackOverlay = BlackOverlayManager(this) {
+            exitScreenOffMode()
+        }
+        blackOverlay?.show()
+        Log.e(TAG, ">>> 黑色覆盖层已显示")
     }
 
     fun exitScreenOffMode() {
         if (!screenOffMode) return
         screenOffMode = false
-        Log.d(TAG, "退出息屏模式")
+        Log.e(TAG, ">>> 退出息屏模式")
         blackOverlay?.remove()
         blackOverlay = null
     }
-
-    /**
-     * 将 YouTube 从 PiP 小窗切换为全屏显示。
-     * 通过发送 Intent 让 YouTube 进入全屏播放，确保广告跳过按钮完整渲染。
-     */
-    private fun bringYouTubeToFullScreen() {
-        try {
-            // 方法1：通过 Intent FLAG_ACTIVITY_NEW_TASK 将 YouTube 带到前台
-            val intent = packageManager.getLaunchIntentForPackage("com.google.android.youtube")
-            if (intent != null) {
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-                startActivity(intent)
-                Log.d(TAG, "已发送 YouTube 全屏 Intent")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "切换 YouTube 全屏失败: ${e.message}")
-        }
-    }
-
-    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
 }
