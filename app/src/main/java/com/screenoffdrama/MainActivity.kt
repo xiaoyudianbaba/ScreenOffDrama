@@ -163,9 +163,10 @@ class MainActivity : ComponentActivity() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 append("通知权限：").append(if (hasNotification) "已开启" else "未开启").append('\n')
             }
+            val skipCount = AdSkipService.getSkipCount(this@MainActivity)
             append("广告跳过：").append(
                 if (adSkipAccOn && adSkipUserOn) "开启" else "未开启"
-            )
+            ).append("  累计跳过：").append(skipCount).append(" 次")
         }
 
         // 广告跳过控制区
@@ -189,6 +190,11 @@ class MainActivity : ComponentActivity() {
             }
             if (!adSkipAccOn && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 append(getString(R.string.ad_skip_restricted_hint))
+            }
+            // 显示跳过记录
+            val skipLog = AdSkipService.getSkipLog(this@MainActivity)
+            if (skipLog.isNotBlank()) {
+                append("\n--- 跳过记录 ---\n").append(skipLog)
             }
         }
     }

@@ -5,10 +5,14 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.os.Handler
 import android.os.Looper
+import android.text.format.DateFormat
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * YouTube 广告自动跳过 + 播放保活（无障碍服务）
@@ -31,9 +35,29 @@ class AdSkipService : AccessibilityService() {
             "skip_ad_button", "skip_ad_button_view", "ytv_skip_ad", "skip_ad"
         )
 
+        /** 广告跳过记录 SharedPreferences 键 */
+        private const val PREFS_AD_SKIP_RECORDS = "ad_skip_records"
+        private const val KEY_SKIP_COUNT = "skip_count"
+        private const val KEY_SKIP_LOG = "skip_log"
+
         fun isUserEnabled(context: Context): Boolean {
             return context.getSharedPreferences("settings", Context.MODE_PRIVATE)
                 .getBoolean(KEY_AD_SKIP_ENABLED, true)
+        }
+
+        fun getSkipCount(context: Context): Int {
+            return context.getSharedPreferences(PREFS_AD_SKIP_RECORDS, Context.MODE_PRIVATE)
+                .getInt(KEY_SKIP_COUNT, 0)
+        }
+
+        fun getSkipLog(context: Context): String {
+            return context.getSharedPreferences(PREFS_AD_SKIP_RECORDS, Context.MODE_PRIVATE)
+                .getString(KEY_SKIP_LOG, "") ?: ""
+        }
+
+        fun clearRecords(context: Context) {
+            context.getSharedPreferences(PREFS_AD_SKIP_RECORDS, Context.MODE_PRIVATE)
+                .edit().clear().apply()
         }
     }
 
@@ -262,5 +286,26 @@ class AdSkipService : AccessibilityService() {
     private fun markSkipping() {
         isSkipping = true
         handler.postDelayed({ isSkipping = false }, SKIP_RESET_DELAY_MS)
+        recordSkip()
+    }
+
+    /** 记录广告跳过：次数+1，追加时间戳日志（最多保留20条） */
+    private fun recordSkip() {
+        val prefs = getSharedPreferences(PREFS_AD_SKIP_RECORDS, Context.MODE_PRIVATE)
+        val count = prefs.getInt(KEY_SKIP_COUNT, 0) + 1
+        val timeStr = SimpleDateFormat("MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+        val logEntry = "$timeStr #$count\n"
+
+        val existingLog = prefs.getString(KEY_SKIP_LOG, "") ?: ""
+        // 只保留最近20条
+        val lines = existingLog.lines().filter { it.isNotBlank() }.takeLast(19)
+        val newLog = (lines + logEntry).joinToString("\n")
+
+        prefs.edit()
+            .putInt(KEY_SKIP_COUNT, count)
+            .putString(KEY_SKIP_LOG, newLog)
+            .apply()
+
+        Log.e(TAG, ">>> 广告跳过 #$count @ $timeStr")
     }
 }
