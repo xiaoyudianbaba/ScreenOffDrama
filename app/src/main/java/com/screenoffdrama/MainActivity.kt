@@ -11,6 +11,7 @@ import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.Switch
 import android.widget.TextView
 import androidx.activity.ComponentActivity
@@ -22,19 +23,34 @@ import com.screenoffdrama.service.ScreenOffService
 
 /**
  * 主界面：权限引导 + 服务启停 + 广告跳过开关
+ * Material Design 3 风格
  */
 class MainActivity : ComponentActivity() {
 
-    private lateinit var statusText: TextView
-    private lateinit var btnOverlay: Button
-    private lateinit var btnBattery: Button
-    private lateinit var btnNotification: Button
-    private lateinit var btnService: Button
+    private lateinit var btnMainAction: Button
+
+    // 状态栏图标
+    private lateinit var ivServiceDot: ImageView
+    private lateinit var ivOverlayDot: ImageView
+    private lateinit var ivBatteryDot: ImageView
+    private lateinit var ivNotificationDot: ImageView
+    private lateinit var ivAdSkipDot: ImageView
+    private lateinit var ivAdSkipIcon: ImageView
+
+    // 状态文本
+    private lateinit var tvServiceStatus: TextView
+    private lateinit var tvOverlayStatus: TextView
+    private lateinit var tvBatteryStatus: TextView
+    private lateinit var tvNotificationStatus: TextView
+    private lateinit var tvAdSkipStatus: TextView
+    private lateinit var tvAllReadyHint: TextView
+
+    // 广告跳过
     private lateinit var switchAdSkip: Switch
-    private lateinit var adSkipStatus: TextView
+    private lateinit var tvAccessibilityStatus: TextView
+    private lateinit var tvAccessibilityHint: TextView
     private lateinit var btnAdSkipSettings: Button
 
-    /** 防止程序化设置 Switch 状态时误触监听器写回偏好 */
     private var updatingUi = false
 
     private val overlayLauncher =
@@ -54,79 +70,75 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        statusText = findViewById(R.id.statusText)
-        btnOverlay = findViewById(R.id.btnOverlay)
-        btnBattery = findViewById(R.id.btnBattery)
-        btnNotification = findViewById(R.id.btnNotification)
-        btnService = findViewById(R.id.btnService)
+        // 核心按钮
+        btnMainAction = findViewById(R.id.btnMainAction)
+
+        // 状态栏
+        ivServiceDot = findViewById(R.id.ivServiceDot)
+        ivOverlayDot = findViewById(R.id.ivOverlayDot)
+        ivBatteryDot = findViewById(R.id.ivBatteryDot)
+        ivNotificationDot = findViewById(R.id.ivNotificationDot)
+        ivAdSkipDot = findViewById(R.id.ivAdSkipDot)
+        ivAdSkipIcon = findViewById(R.id.ivAdSkipIcon)
+
+        tvServiceStatus = findViewById(R.id.tvServiceStatus)
+        tvOverlayStatus = findViewById(R.id.tvOverlayStatus)
+        tvBatteryStatus = findViewById(R.id.tvBatteryStatus)
+        tvNotificationStatus = findViewById(R.id.tvNotificationStatus)
+        tvAdSkipStatus = findViewById(R.id.tvAdSkipStatus)
+        tvAllReadyHint = findViewById(R.id.tvAllReadyHint)
+
+        // 广告跳过
         switchAdSkip = findViewById(R.id.switchAdSkip)
-        adSkipStatus = findViewById(R.id.adSkipStatusText)
+        tvAccessibilityStatus = findViewById(R.id.tvAccessibilityStatus)
+        tvAccessibilityHint = findViewById(R.id.tvAccessibilityHint)
         btnAdSkipSettings = findViewById(R.id.btnAdSkipSettings)
 
-        btnOverlay.setOnClickListener { openOverlaySettings() }
-        btnBattery.setOnClickListener { openBatterySettings() }
-        btnNotification.setOnClickListener { requestNotificationPermission() }
-        btnService.setOnClickListener { toggleService() }
+        // 点击事件
+        btnMainAction.setOnClickListener { toggleService() }
 
-        // 广告跳过独立开关：仅控制 AdSkipService 是否监听，与息屏听剧服务互不影响
         switchAdSkip.setOnCheckedChangeListener { _, isChecked ->
             if (updatingUi) return@setOnCheckedChangeListener
             prefs.edit { putBoolean(AdSkipService.KEY_AD_SKIP_ENABLED, isChecked) }
             updateUi()
         }
         btnAdSkipSettings.setOnClickListener { openAccessibilitySettings() }
+
+        updateUi()
     }
 
     override fun onResume() {
         super.onResume()
         updateUi()
         maybeAutoStartService()
-        // 服务为异步启动，延迟几次刷新状态，避免按钮/文案与真实运行状态不一致
-        btnService.postDelayed({ updateUi() }, 500)
-        btnService.postDelayed({ updateUi() }, 1500)
+        btnMainAction.postDelayed({ updateUi() }, 500)
+        btnMainAction.postDelayed({ updateUi() }, 1500)
     }
-    
+
     override fun onPictureInPictureModeChanged(
         isInPictureInPictureMode: Boolean,
         newConfig: android.content.res.Configuration
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         Log.d(TAG, "PiP mode changed: $isInPictureInPictureMode")
-        
+
         if (isInPictureInPictureMode) {
-            // 进入 PiP 模式，隐藏 UI 元素
             hideUiForPip()
         } else {
-            // 退出 PiP 模式，恢复 UI 元素
             showUiFromPip()
         }
     }
-    
+
     private fun hideUiForPip() {
-        // 在 PiP 模式下隐藏部分 UI 元素
-        statusText.visibility = android.view.View.GONE
-        btnOverlay.visibility = android.view.View.GONE
-        btnBattery.visibility = android.view.View.GONE
-        btnNotification.visibility = android.view.View.GONE
-        switchAdSkip.visibility = android.view.View.GONE
-        adSkipStatus.visibility = android.view.View.GONE
-        btnAdSkipSettings.visibility = android.view.View.GONE
+        btnMainAction.visibility = android.view.View.GONE
     }
-    
+
     private fun showUiFromPip() {
-        // 恢复所有 UI 元素
-        statusText.visibility = android.view.View.VISIBLE
-        btnOverlay.visibility = android.view.View.VISIBLE
-        btnBattery.visibility = android.view.View.VISIBLE
-        btnNotification.visibility = android.view.View.VISIBLE
-        switchAdSkip.visibility = android.view.View.VISIBLE
-        adSkipStatus.visibility = android.view.View.VISIBLE
-        btnAdSkipSettings.visibility = android.view.View.VISIBLE
+        btnMainAction.visibility = android.view.View.VISIBLE
         updateUi()
     }
 
     // ---------- UI 状态 ----------
-
     private fun updateUi() {
         val hasOverlay = Settings.canDrawOverlays(this)
         val hasBattery = (getSystemService(Context.POWER_SERVICE) as PowerManager)
@@ -140,62 +152,87 @@ class MainActivity : ComponentActivity() {
         val adSkipUserOn = prefs.getBoolean(AdSkipService.KEY_AD_SKIP_ENABLED, true)
         val adSkipAccOn = isAccessibilityServiceEnabled(AdSkipService::class.java)
 
-        btnOverlay.text = if (hasOverlay) "✔ 悬浮窗权限已开启" else "去开启悬浮窗权限"
-        btnOverlay.isEnabled = !hasOverlay
-
-        btnBattery.text = if (hasBattery) "✔ 电池优化已忽略" else "去设置忽略电池优化"
-        btnBattery.isEnabled = !hasBattery
-
-        btnNotification.isEnabled = !hasNotification
-        btnNotification.text = if (hasNotification) "✔ 通知权限已开启" else "去开启通知权限"
-
-        btnService.text = if (serviceRunning) {
+        // ===== 核心按钮文字 =====
+        btnMainAction.text = if (serviceRunning) {
             getString(R.string.btn_service_stop)
         } else {
             getString(R.string.btn_service_start)
         }
-        btnService.isEnabled = hasOverlay && hasBattery
+        btnMainAction.isEnabled = hasOverlay && hasBattery
 
-        statusText.text = buildString {
-            append("服务状态：").append(if (serviceRunning) "运行中" else "未运行").append('\n')
-            append("悬浮窗权限：").append(if (hasOverlay) "已开启" else "未开启").append('\n')
-            append("电池优化：").append(if (hasBattery) "已忽略（无限制）" else "未忽略").append('\n')
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                append("通知权限：").append(if (hasNotification) "已开启" else "未开启").append('\n')
-            }
-            append("广告跳过：").append(
-                if (adSkipAccOn && adSkipUserOn) "开启" else "未开启"
-            )
+        // ===== 状态栏 =====
+        // 服务状态
+        ivServiceDot.setImageResource(
+            if (serviceRunning) R.drawable.bg_status_dot_green else R.drawable.bg_status_dot_gray
+        )
+        tvServiceStatus.text = if (serviceRunning) "运行中" else "未运行"
+        tvServiceStatus.setTextColor(if (serviceRunning) getColor(R.color.success) else getColor(R.color.on_surface_variant))
+
+        // 悬浮窗权限
+        ivOverlayDot.setImageResource(if (hasOverlay) R.drawable.bg_status_dot_green else R.drawable.bg_status_dot_gray)
+        tvOverlayStatus.text = if (hasOverlay) "已开启" else "未开启"
+
+        // 电池优化
+        ivBatteryDot.setImageResource(if (hasBattery) R.drawable.bg_status_dot_green else R.drawable.bg_status_dot_gray)
+        tvBatteryStatus.text = if (hasBattery) "已忽略（无限制）" else "未忽略"
+
+        // 通知权限
+        ivNotificationDot.setImageResource(if (hasNotification) R.drawable.bg_status_dot_green else R.drawable.bg_status_dot_gray)
+        tvNotificationStatus.text = if (hasNotification) "已开启" else "未开启"
+
+        // 广告跳过
+        val adSkipEnabled = adSkipAccOn && adSkipUserOn
+        ivAdSkipDot.setImageResource(if (adSkipEnabled) R.drawable.bg_status_dot_green else R.drawable.bg_status_dot_gray)
+        ivAdSkipIcon.setImageResource(if (adSkipEnabled) R.drawable.bg_circle_badge else R.drawable.bg_circle_badge_error)
+
+        val skipCount = AdSkipService.getSkipCount(this)
+        tvAdSkipStatus.text = if (adSkipEnabled) {
+            "开启 ｜ 累计跳过：$skipCount 次"
+        } else if (adSkipUserOn && !adSkipAccOn) {
+            "无障碍未开启 ｜ 累计跳过：$skipCount 次"
+        } else {
+            "未开启 ｜ 累计跳过：$skipCount 次"
         }
 
-        // 广告跳过控制区
+        // 全部就绪提示
+        val allReady = serviceRunning && hasOverlay && hasBattery && hasNotification && adSkipEnabled
+        tvAllReadyHint.visibility = if (allReady) android.view.View.VISIBLE else android.view.View.GONE
+
+        // ===== 广告跳过区域 =====
         updatingUi = true
         switchAdSkip.isChecked = adSkipUserOn
         updatingUi = false
-        btnAdSkipSettings.isEnabled = !adSkipAccOn
-        btnAdSkipSettings.text = if (adSkipAccOn) {
+
+        val accOn = adSkipAccOn
+        btnAdSkipSettings.isEnabled = !accOn
+        btnAdSkipSettings.text = if (accOn) {
             getString(R.string.btn_ad_skip_settings_done)
         } else {
             getString(R.string.btn_ad_skip_settings)
         }
-        adSkipStatus.text = buildString {
-            append(if (adSkipAccOn) {
-                getString(R.string.ad_skip_status_on)
-            } else {
-                getString(R.string.ad_skip_status_off)
-            }).append('\n')
-            if (!adSkipUserOn) {
-                append(getString(R.string.ad_skip_switch_off)).append('\n')
-            }
-            if (!adSkipAccOn && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                append(getString(R.string.ad_skip_restricted_hint))
-            }
+
+        tvAccessibilityStatus.text = if (accOn) {
+            getString(R.string.ad_skip_status_on)
+        } else {
+            getString(R.string.ad_skip_status_off)
+        }
+        tvAccessibilityStatus.setBackgroundResource(
+            if (accOn) R.drawable.bg_chip_success else R.drawable.bg_chip_warning
+        )
+        tvAccessibilityStatus.setTextColor(
+            if (accOn) getColor(R.color.on_success_container) else getColor(R.color.on_warning_container)
+        )
+
+        // 显示跳过记录
+        val skipLog = AdSkipService.getSkipLog(this)
+        if (skipLog.isNotBlank()) {
+            tvAccessibilityHint.text = "跳过记录：\n$skipLog"
+        } else {
+            tvAccessibilityHint.text = getString(R.string.accessibility_service_description)
         }
     }
 
     // ---------- 广告跳过 ----------
-
-    /** 检测无障碍服务是否已在系统设置中开启 */
     private fun isAccessibilityServiceEnabled(serviceClass: Class<*>): Boolean {
         val expected = "$packageName/${serviceClass.name}"
         val enabled = Settings.Secure.getString(
@@ -212,7 +249,6 @@ class MainActivity : ComponentActivity() {
     }
 
     // ---------- 权限引导 ----------
-
     private fun openOverlaySettings() {
         val intent = Intent(
             Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
@@ -238,7 +274,6 @@ class MainActivity : ComponentActivity() {
     }
 
     // ---------- 服务启停 ----------
-
     private fun toggleService() {
         if (ScreenOffService.isRunning) {
             prefs.edit { putBoolean(KEY_USER_STOPPED, true) }
@@ -247,10 +282,9 @@ class MainActivity : ComponentActivity() {
             prefs.edit { putBoolean(KEY_USER_STOPPED, false) }
             startScreenOffService()
         }
-        btnService.postDelayed({ updateUi() }, 300)
+        btnMainAction.postDelayed({ updateUi() }, 300)
     }
 
-    /** 权限满足且用户未主动停止过时，自动拉起服务（保证回到桌面/视频时悬浮球在） */
     private fun maybeAutoStartService() {
         if (ScreenOffService.isRunning) return
         val hasOverlay = Settings.canDrawOverlays(this)

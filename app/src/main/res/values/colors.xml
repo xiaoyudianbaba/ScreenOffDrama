@@ -1,7 +1,52 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#1A1A2E</color>
-    <color name="text_primary">#212121</color>
-    <color name="text_secondary">#757575</color>
-    <color name="divider">#22000000</color>
+    <color name="white">#FFFFFF</color>
+    
+    <!-- Material Design 3 Colors -->
+    <color name="primary">#00B894</color>
+    <color name="primary_variant">#009E80</color>
+    <color name="primary_container">#E0F7F1</color>
+    <color name="on_primary">#FFFFFF</color>
+    <color name="on_primary_container">#003B31</color>
+    
+    <color name="secondary">#6C757D</color>
+    <color name="on_secondary">#FFFFFF</color>
+    
+    <color name="tertiary">#FF9F43</color>
+    <color name="on_tertiary">#FFFFFF</color>
+    <color name="tertiary_container">#FFF3E0</color>
+    
+    <color name="surface">#FFFFFF</color>
+    <color name="on_surface">#1A1A1A</color>
+    <color name="surface_variant">#F7F8FA</color>
+    <color name="on_surface_variant">#8A8F99</color>
+    
+    <color name="background">#F7F8FA</color>
+    <color name="on_background">#1A1A1A</color>
+    
+    <color name="error">#E53E3E</color>
+    <color name="on_error">#FFFFFF</color>
+    <color name="error_container">#FEF2F2</color>
+    <color name="on_error_container">#991B1B</color>
+    
+    <color name="outline">#E0E0E0</color>
+    <color name="outline_variant">#E8ECEF</color>
+    <color name="shadow">#1A1A1A</color>
+    
+    <!-- Semantic colors -->
+    <color name="success">#00B894</color>
+    <color name="success_container">#E0F7F1</color>
+    <color name="on_success">#FFFFFF</color>
+    <color name="on_success_container">#003B31</color>
+    
+    <color name="warning">#FF9F43</color>
+    <color name="warning_container">#FFF3E0</color>
+    <color name="on_warning">#FFFFFF</color>
+    <color name="on_warning_container">#7B4F00</color>
+    
+    <!-- Legacy compatibility -->
+    <color name="text_primary">#1A1A1A</color>
+    <color name="text_secondary">#8A8F99</color>
+    <color name="divider">#E8ECEF</color>
 </resources>
